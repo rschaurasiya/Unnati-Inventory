@@ -747,18 +747,22 @@ def sync_firebase_user(payload: FirebaseSyncRequest, db: Session = Depends(get_d
         # Ensure shop profile exists
         shop = db.query(ShopProfile).filter(ShopProfile.user_id == user.id).first()
         if not shop:
+            shop_title = f"{user.full_name}'s Kirana Store" if user.full_name else "My Kirana Store"
             shop = ShopProfile(
                 user_id=user.id,
-                shop_name="",
-                shop_address="",
-                shop_phone="",
-                shop_email=user.email,
+                shop_name=shop_title,
+                shop_address="Main Market",
+                shop_phone=user.phone or "",
+                shop_email=user.email or "",
                 currency="INR (₹)",
                 timezone="Asia/Kolkata (IST)",
                 created_at=now,
                 updated_at=now
             )
             db.add(shop)
+        elif not shop.shop_name:
+            shop.shop_name = f"{user.full_name}'s Kirana Store" if user.full_name else "My Kirana Store"
+            shop.updated_at = now
 
         db.commit()
         db.refresh(user)
@@ -789,11 +793,12 @@ def sync_firebase_user(payload: FirebaseSyncRequest, db: Session = Depends(get_d
         db.add(user)
         db.flush()
 
+        shop_title = f"{display_name}'s Kirana Store" if display_name else "My Kirana Store"
         shop = ShopProfile(
             user_id=user.id,
-            shop_name="",
-            shop_address="",
-            shop_phone="",
+            shop_name=shop_title,
+            shop_address="Main Market",
+            shop_phone=clean_phone,
             shop_email=clean_email,
             currency="INR (₹)",
             timezone="Asia/Kolkata (IST)",

@@ -129,7 +129,13 @@ class KiranaAuthService {
       fbUser = cred.user;
     } catch (fbErr) {
       if (fbErr.code === "auth/email-already-in-use") {
-        throw new Error("An account with this phone or email already exists. Please sign in instead.");
+        // User already has a Firebase auth record; verify password by signing in
+        try {
+          const loginCred = await signInWithEmailAndPassword(this.auth, authEmail, cleanPass);
+          fbUser = loginCred.user;
+        } catch (_) {
+          throw new Error("An account with this email already exists in Firebase. Please enter your account password to link this store, or sign in.");
+        }
       } else if (fbErr.code === "auth/weak-password") {
         throw new Error("Password must be at least 6 characters long.");
       } else if (fbErr.code === "auth/unauthorized-domain") {
@@ -292,16 +298,7 @@ class KiranaAuthService {
         console.warn("[AuthService] Direct backend login note:", backendErr.message);
       }
 
-      // Step 2A: Check whether user is registered in our system
-      const isRegistered = await this.checkUserRegistered(cleanIdent);
-      if (!isRegistered) {
-        const notRegErr = new Error("Account Not Registered");
-        notRegErr.code = "ACCOUNT_NOT_REGISTERED";
-        notRegErr.identifier = cleanIdent;
-        throw notRegErr;
-      }
-
-      // Step 2B: Attempt Firebase Sign In for cloud-registered or Google-linked users
+      // Step 2: Attempt Firebase Sign In for cloud-registered or Google-linked users
       let fbUser = null;
       try {
         const userCredential = await signInWithEmailAndPassword(this.auth, authEmail, cleanPass);
@@ -309,7 +306,7 @@ class KiranaAuthService {
       } catch (signInErr) {
         const errCode = signInErr.code || "";
         if (errCode === "auth/wrong-password" || errCode === "auth/invalid-credential") {
-          throw new Error("Incorrect password. Please verify your password and try again.");
+          throw new Error("Incorrect password. Please verify your password and try again. (If you originally registered via Google, please click 'Continue with Google')");
         } else if (errCode === "auth/user-not-found") {
           const notRegErr = new Error("Account Not Registered");
           notRegErr.code = "ACCOUNT_NOT_REGISTERED";
@@ -320,7 +317,7 @@ class KiranaAuthService {
         } else if (errCode === "auth/invalid-email") {
           throw new Error("Invalid mobile number or email address format.");
         } else if (errCode === "auth/unauthorized-domain") {
-          throw new Error("Domain not authorized in Firebase Console. Please sign in using Mobile Number & Password.");
+          throw new Error("Domain not authorized in Firebase Console. Please add your Render domain in Firebase Console, or sign in using Mobile Number & Password.");
         } else {
           throw new Error(signInErr.message || "Authentication failed. Please verify credentials and try again.");
         }
@@ -330,7 +327,7 @@ class KiranaAuthService {
         throw new Error("Failed to authenticate.");
       }
 
-      // Step 2C: Synchronize authenticated Firebase user with FastAPI backend & SQLite DB
+      // Step 3: Synchronize authenticated Firebase user with FastAPI backend & SQLite DB
       return await this.syncWithBackend(fbUser, phone);
     } finally {
       this.isAuthenticating = false;
@@ -340,8 +337,7 @@ class KiranaAuthService {
 
   /**
    * Authenticates user via Google Popup Sign-In.
-   * Strict workflow: Checks whether Google account is registered in master registry.
-   * If not registered, immediately signs out and throws ACCOUNT_NOT_REGISTERED.
+   * Provisions store in FastAPI master registry automatically upon Google verification.
    *
    * @returns {Promise<{status: string, success: boolean, user: Object, token: string, access_token: string, data: Object}>}
    */
@@ -353,25 +349,7 @@ class KiranaAuthService {
       const result = await signInWithPopup(this.auth, googleProvider);
       const fbUser = result.user;
 
-      // Check whether user is already registered in our system
-      const isRegistered = await this.checkUserRegistered(fbUser.email, fbUser.uid);
-      if (!isRegistered) {
-        // Immediately sign out of unauthorized Google session
-        try {
-          await signOut(this.auth);
-        } catch (_) {}
-
-        const notRegErr = new Error("Account Not Registered");
-        notRegErr.code = "ACCOUNT_NOT_REGISTERED";
-        notRegErr.googleUser = {
-          displayName: fbUser.displayName,
-          email: fbUser.email,
-          photoURL: fbUser.photoURL,
-          uid: fbUser.uid
-        };
-        throw notRegErr;
-      }
-
+      // Automatically sync and provision the store in FastAPI backend SQLite DB
       return await this.syncWithBackend(fbUser, null);
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
