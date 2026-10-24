@@ -1,0 +1,10 @@
+Date,Item,Qty,Price,Phone,Address
+2026-09-01,Sugar,2,45,9876543210,Delhi
+2026-09-01,Sugar,2,45,9876543210,Delhi
+,Tata Salt,1,28,,
+2026-09-02,Tata Salt,-3,28,,
+2026-09-02,Tata Salt,0,28,,
+2026-09-03,Sugar,1,-45,,
+2026-09-04,Exotic Dragonfruit Mystery Item 999,2,100,,
+03/04/2026,Sugar,1,45,,
+2030-01-01,Sugar,1,45,,
