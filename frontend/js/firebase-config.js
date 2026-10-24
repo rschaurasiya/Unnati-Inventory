@@ -122,8 +122,8 @@ class KiranaAuthService {
     // Map phone to internal auth email if email is not provided
     const authEmail = cleanEmail || this.formatPhoneToEmail(cleanPhone);
 
-    // 1. Create account in Firebase
-    let fbUser;
+    // 1. Attempt Firebase account creation (best-effort; if domain not authorized or offline, fallback to backend)
+    let fbUser = null;
     try {
       const cred = await createUserWithEmailAndPassword(this.auth, authEmail, cleanPass);
       fbUser = cred.user;
@@ -132,8 +132,11 @@ class KiranaAuthService {
         throw new Error("An account with this phone or email already exists. Please sign in instead.");
       } else if (fbErr.code === "auth/weak-password") {
         throw new Error("Password must be at least 6 characters long.");
+      } else if (fbErr.code === "auth/unauthorized-domain") {
+        console.warn("[AuthService] Firebase domain not authorized; proceeding with backend registration.");
+      } else {
+        console.warn("[AuthService] Firebase registration note:", fbErr.message);
       }
-      throw new Error(fbErr.message || "Firebase registration failed.");
     }
 
     // 2. Register user metadata in FastAPI master user registry & provision isolated empty bucket
@@ -144,7 +147,7 @@ class KiranaAuthService {
       password: cleanPass,
       confirm_password: cleanPass,
       shop_name: cleanShop,
-      firebase_uid: fbUser.uid
+      firebase_uid: fbUser ? fbUser.uid : null
     };
 
     let regResp;
@@ -171,7 +174,7 @@ class KiranaAuthService {
 
     // 3. IMMEDIATELY SIGN OUT of the temporary Firebase auto-session
     try {
-      await signOut(this.auth);
+      if (fbUser) await signOut(this.auth);
     } catch (_) {}
 
     // Clear any transient tokens from registration
@@ -187,8 +190,8 @@ class KiranaAuthService {
   }
 
   /**
-   * Authenticates user via Firebase Auth.
-   * Strict workflow: Checks registration FIRST. Unregistered accounts are blocked from auto-login.
+   * Authenticates user via FastAPI Backend & Firebase Auth with zero-failure fallback.
+   * Supports pre-seeded demo account (9876543210 / Password@123) and multi-tenant stores on Render.
    *
    * @param {string} identifier Mobile phone (10 digits) or Email
    * @param {string} password Account password
@@ -222,7 +225,74 @@ class KiranaAuthService {
         throw new Error("Please enter a valid 10-digit mobile number or email address.");
       }
 
-      // Step 2A: Check whether user is already registered in our system
+      // Step 1: Direct Backend Login (FastAPI + SQLite Multi-Tenant Authentication)
+      // Handles demo accounts (9876543210 / Password@123) and registered stores natively on Render
+      try {
+        const loginPayload = {
+          identifier: cleanIdent,
+          password: cleanPass
+        };
+
+        let bResp = await fetch("/api/v1/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(loginPayload)
+        });
+
+        if (!bResp.ok && bResp.status === 404) {
+          bResp = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(loginPayload)
+          });
+        }
+
+        if (bResp.ok) {
+          const bData = await bResp.json();
+          const token = bData?.token || bData?.access_token || bData?.data?.token;
+          const user = bData?.user || bData?.data?.user;
+
+          localStorage.setItem("access_token", token);
+          localStorage.setItem("pos_auth_token", token);
+          if (user) {
+            localStorage.setItem("shopkeeper_user", JSON.stringify(user));
+            localStorage.setItem("pos_auth_user", JSON.stringify(user));
+          }
+
+          if (typeof window.setAuthToken === "function") window.setAuthToken(token);
+          if (typeof window.syncUserDataAcrossUI === "function") window.syncUserDataAcrossUI(user);
+          if (user && user.shop_profile && typeof window.syncBusinessDataAcrossUI === "function") {
+            window.syncBusinessDataAcrossUI(user.shop_profile);
+          }
+          if (typeof window.updateAuthHeaderUI === "function") window.updateAuthHeaderUI(true);
+
+          // Best-effort background Firebase session sync
+          try {
+            await signInWithEmailAndPassword(this.auth, authEmail, cleanPass);
+          } catch (_) {}
+
+          return {
+            status: "success",
+            success: true,
+            token: token,
+            access_token: token,
+            data: { token, user },
+            user: user
+          };
+        } else if (bResp.status === 401) {
+          const isReg = await this.checkUserRegistered(cleanIdent);
+          if (isReg) {
+            throw new Error("Incorrect password. Please verify your password and try again.");
+          }
+        }
+      } catch (backendErr) {
+        if (backendErr.message && backendErr.message.includes("Incorrect password")) {
+          throw backendErr;
+        }
+        console.warn("[AuthService] Direct backend login note:", backendErr.message);
+      }
+
+      // Step 2A: Check whether user is registered in our system
       const isRegistered = await this.checkUserRegistered(cleanIdent);
       if (!isRegistered) {
         const notRegErr = new Error("Account Not Registered");
@@ -231,7 +301,7 @@ class KiranaAuthService {
         throw notRegErr;
       }
 
-      // Step 2B: Attempt Firebase Sign In (STRICT: no auto-account creation on sign-in)
+      // Step 2B: Attempt Firebase Sign In for cloud-registered or Google-linked users
       let fbUser = null;
       try {
         const userCredential = await signInWithEmailAndPassword(this.auth, authEmail, cleanPass);
@@ -249,13 +319,15 @@ class KiranaAuthService {
           throw new Error("Access temporarily disabled due to many failed login attempts. Please try again later.");
         } else if (errCode === "auth/invalid-email") {
           throw new Error("Invalid mobile number or email address format.");
+        } else if (errCode === "auth/unauthorized-domain") {
+          throw new Error("Domain not authorized in Firebase Console. Please sign in using Mobile Number & Password.");
         } else {
-          throw new Error(signInErr.message || "Firebase authentication failed. Please try again.");
+          throw new Error(signInErr.message || "Authentication failed. Please verify credentials and try again.");
         }
       }
 
       if (!fbUser) {
-        throw new Error("Failed to authenticate with Firebase.");
+        throw new Error("Failed to authenticate.");
       }
 
       // Step 2C: Synchronize authenticated Firebase user with FastAPI backend & SQLite DB
@@ -559,6 +631,15 @@ async function handleGoogleSignIn() {
     if (err.code === "ACCOUNT_NOT_REGISTERED") {
       if (typeof window.showAccountNotRegisteredModal === "function") {
         window.showAccountNotRegisteredModal(err.googleUser || null);
+      }
+      return;
+    }
+    if (err.code === "auth/unauthorized-domain") {
+      if (window.AppUtils) {
+        window.AppUtils.showAlert(
+          alertBoxId,
+          "Domain Authorization Needed: To use Google Sign-In on Render, add this domain to Firebase Console > Authentication > Settings > Authorized Domains. Alternatively, use Mobile Number & Password."
+        );
       }
       return;
     }
