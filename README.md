@@ -1,11 +1,19 @@
 # Apna Kirana: Shopkeeper Voice POS, AI Copilot & Inventory Assistant
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7.svg?style=for-the-badge&logo=render)](https://unnati-inventory.onrender.com/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-181717.svg?style=for-the-badge&logo=github)](https://github.com/rschaurasiya/Unnati-Inventory)
 [![Python 3.13](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLite / SQLAlchemy](https://img.shields.io/badge/Database-SQLAlchemy%202.0-red.svg)](https://www.sqlalchemy.org/)
 [![Voice TTS](https://img.shields.io/badge/Voice%20TTS-ElevenLabs%20%7C%20Edge--TTS-orange.svg)]()
 [![AI Copilot](https://img.shields.io/badge/AI%20Copilot-Groq%20%7C%20Offline%20Engine-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+
+> 🌐 **Live Web Application**: [https://unnati-inventory.onrender.com/](https://unnati-inventory.onrender.com/)  
+> 🔑 **Instant Demo Credentials**:  
+> - **Mobile Number**: `9876543210`  
+> - **Password**: `Password@123`  
+> *(You can also click **Continue with Google** or register a new store account)*
 
 An intelligent, speech-driven Point-of-Sale (POS), inventory management, customer credit (Udhaar) ledger, AI Copilot, and predictive demand forecasting system tailored specifically for Indian grocery (**Kirana**) stores.
 
@@ -167,8 +175,8 @@ Traditional neighborhood Kirana stores in India face unique operational challeng
 
 ### 2. Clone the Repository
 ```bash
-git clone https://github.com/rschaurasiya/final_project.git
-cd final_project
+git clone https://github.com/rschaurasiya/Unnati-Inventory.git
+cd Unnati-Inventory
 ```
 
 ### 3. Create and Activate Virtual Environment
@@ -206,7 +214,30 @@ Open `.env` in an editor to add optional keys:
 
 ---
 
-## 🏃 Running the Application
+## 🌐 Live Cloud Deployment (Render)
+
+The application is deployed live on Render with automated continuous deployment:
+
+- **Live URL**: [https://unnati-inventory.onrender.com/](https://unnati-inventory.onrender.com/)
+- **Repository**: [https://github.com/rschaurasiya/Unnati-Inventory](https://github.com/rschaurasiya/Unnati-Inventory)
+- **Hosting**: Render (Web Service)
+
+### Render Deployment Configuration:
+| Setting | Value |
+| :--- | :--- |
+| **Runtime** | Python 3 |
+| **Build Command** | `pip install -r requirements.txt` |
+| **Start Command** | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+| **Auto-Deploy** | Yes (automatic on push to `main` branch) |
+
+### Instant Demo & Authentication on Cloud:
+- **Demo Store Login**: Mobile: `9876543210` | Password: `Password@123`
+- **Google Sign-In**: Click **"Continue with Google"** for single-click onboarding with auto-provisioned store profile.
+- **Firebase Auth**: Cross-platform email/password authentication synchronized with backend FastAPI SQLite store.
+
+---
+
+## 🏃 Running the Application Locally
 
 Start the local FastAPI development server:
 ```bash
@@ -246,7 +277,7 @@ python -m pytest tests/test_historical_import.py -v
 ## 📂 Project Structure
 
 ```text
-final_project/
+Unnati-Inventory/
 ├── backend/
 │   ├── main.py                  # FastAPI application entrypoint & lifespan
 │   ├── config.py                # Pydantic Settings & environment loader
